@@ -4,6 +4,7 @@ import { useSearchParams } from "next/navigation";
 import { v4 as uuidv4 } from "uuid";
 
 import Image from "next/image";
+import UserAuthControls from "@/app/components/UserAuthControls";
 
 // UI components
 import Transcript from "./components/Transcript";
@@ -37,8 +38,10 @@ const sdkScenarioMap: Record<string, RealtimeAgent[]> = {
 
 import useAudioDownload from "./hooks/useAudioDownload";
 import { useHandleSessionHistory } from "./hooks/useHandleSessionHistory";
+import { useToken } from "@/app/contexts/TokenContext";
 
 function App() {
+  const { totals, addInputText } = useToken();
   const searchParams = useSearchParams()!;
 
   // ---------------------------------------------------------------------
@@ -244,6 +247,9 @@ function App() {
     const id = uuidv4().slice(0, 32);
     addTranscriptMessage(id, "user", text, true);
 
+    // Track tokens for simulated user text
+    try { addInputText(text); } catch {}
+
     sendClientEvent({
       type: 'conversation.item.create',
       item: {
@@ -287,6 +293,11 @@ function App() {
   const handleSendTextMessage = () => {
     if (!userText.trim()) return;
     interrupt();
+
+    try {
+      // Track tokens for typed user text
+      addInputText(userText.trim());
+    } catch {}
 
     try {
       sendUserText(userText.trim());
@@ -453,6 +464,7 @@ function App() {
           </div>
         </div>
         <div className="flex items-center">
+          <UserAuthControls />
           <label className="flex items-center text-base gap-1 mr-2 font-medium">
             Scenario
           </label>
@@ -512,6 +524,24 @@ function App() {
               </div>
             </div>
           )}
+          <div className="ml-6 text-sm text-gray-700 flex flex-wrap items-center gap-2">
+            {/* Per-user totals are stored server-side with a short TTL and mirrored here. */}
+            <span className="px-2 py-1 bg-white border border-gray-300 rounded" title="User typed or simulated text tokens">
+              Text In: {totals.inputTextTokens} · ${totals.inputTextCostUSD.toFixed(4)}
+            </span>
+            <span className="px-2 py-1 bg-white border border-gray-300 rounded" title="Assistant text output tokens">
+              Text Out: {totals.outputTextTokens} · ${totals.outputTextCostUSD.toFixed(4)}
+            </span>
+            <span className="px-2 py-1 bg-white border border-gray-300 rounded" title="User audio transcript tokens (priced at audio rates)">
+              Audio In: {totals.inputAudioTokens} · ${totals.inputAudioCostUSD.toFixed(4)}
+            </span>
+            <span className="px-2 py-1 bg-white border border-gray-300 rounded" title="Assistant audio transcript tokens (priced at audio rates)">
+              Audio Out: {totals.outputAudioTokens} · ${totals.outputAudioCostUSD.toFixed(4)}
+            </span>
+            <span className="px-2 py-1 bg-white border border-gray-300 rounded font-semibold" title="Total cost across text and audio">
+              Total: ${totals.totalCostUSD.toFixed(4)}
+            </span>
+          </div>
         </div>
       </div>
 

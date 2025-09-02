@@ -21,6 +21,11 @@ There are two main patterns demonstrated:
 
 ## Setup
 
+Authentication and per-user spend tracking
+- This app now uses Clerk for authentication. Create a Clerk app and set NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY and CLERK_SECRET_KEY in your environment (see .env.sample).
+- When signed in, the client will attribute token usage to your user and persist totals on the server in a short-lived in-memory store (default ~6 hours TTL). Totals are also shown in the header broken down by Text In/Out and Audio In/Out.
+- API routes are protected: /api/session, /api/tokens, and /api/spend require an authenticated user.
+
 - This is a Next.js typescript app. Install dependencies with `npm i`.
 - Add your `OPENAI_API_KEY` to your env. Either add it to your `.bash_profile` or equivalent, or copy `.env.sample` to `.env` and add it there.
 - Start the server with `npm run dev`

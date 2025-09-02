@@ -1,6 +1,14 @@
 import { NextResponse } from "next/server";
 
+import { auth } from "@clerk/nextjs/server";
+
+export const runtime = 'nodejs';
+
 export async function GET() {
+  const { userId } = auth();
+  if (!userId) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
   try {
     const response = await fetch(
       "https://api.openai.com/v1/realtime/sessions",

@@ -3,6 +3,8 @@
 import { useRef } from "react";
 import { useTranscript } from "@/app/contexts/TranscriptContext";
 import { useEvent } from "@/app/contexts/EventContext";
+import { useToken } from "@/app/contexts/TokenContext";
+import { countTokens } from "@/app/lib/tokenService";
 
 export function useHandleSessionHistory() {
   const {
@@ -13,7 +15,11 @@ export function useHandleSessionHistory() {
     updateTranscriptItem,
   } = useTranscript();
 
+  const { addInputAudioTranscript, addOutputAudioTranscript, addOutputTextTokensDelta } = useToken();
   const { logServerEvent } = useEvent();
+
+  // Track already-counted assistant text tokens per message to add only deltas
+  const assistantTextTokenCountRef = useRef<Record<string, number>>({});
 
   /* ----------------------- helpers ------------------------- */
 
@@ -24,6 +30,7 @@ export function useHandleSessionHistory() {
       .map((c) => {
         if (!c || typeof c !== "object") return "";
         if (c.type === "input_text") return c.text ?? "";
+        if (c.type === "text" || c.type === "output_text") return c.text ?? "";
         if (c.type === "audio") return c.transcript ?? "";
         return "";
       })
@@ -115,12 +122,29 @@ export function useHandleSessionHistory() {
     items.forEach((item: any) => {
       if (!item || item.type !== 'message') return;
 
-      const { itemId, content = [] } = item;
+      const { itemId, role, content = [] } = item;
 
       const text = extractMessageText(content);
 
       if (text) {
         updateTranscriptMessage(itemId, text, false);
+
+        // Incrementally count assistant output text tokens
+        if (role === 'assistant') {
+          (async () => {
+            try {
+              const newCount = await countTokens(text);
+              const prevCount = assistantTextTokenCountRef.current[itemId] ?? 0;
+              if (newCount > prevCount) {
+                const delta = newCount - prevCount;
+                assistantTextTokenCountRef.current[itemId] = newCount;
+                addOutputTextTokensDelta(delta);
+              }
+            } catch (err) {
+              console.warn('[handleHistoryUpdated] token count failed', err);
+            }
+          })();
+        }
       }
     });
   }
@@ -133,7 +157,7 @@ export function useHandleSessionHistory() {
     }
   }
 
-  function handleTranscriptionCompleted(item: any) {
+  async function handleTranscriptionCompleted(item: any) {
     // History updates don't reliably end in a completed item, 
     // so we need to handle finishing up when the transcription is completed.
     const itemId = item.item_id;
@@ -157,6 +181,15 @@ export function useHandleSessionHistory() {
           },
         });
       }
+
+      // Token tracking for audio transcripts
+      try {
+        if (item?.type === 'conversation.item.input_audio_transcription.completed') {
+          await addInputAudioTranscript(finalTranscript);
+        } else if (item?.type === 'response.audio_transcript.done') {
+          await addOutputAudioTranscript(finalTranscript);
+        }
+      } catch {}
     }
   }
 

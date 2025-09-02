@@ -1,3 +1,4 @@
 import dotenv from 'dotenv';
 
-dotenv.config({path: './env'})
+// Load default .env file at project root when running in Node contexts (dev, SSR)
+dotenv.config();
