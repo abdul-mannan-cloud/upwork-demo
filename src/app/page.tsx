@@ -20,7 +20,7 @@ export default function Page() {
       <SignedOut>
         <div className="h-screen w-full flex items-center justify-center">
           <SignInButton mode="modal">
-            <button className="px-4 py-2 border rounded bg-white shadow">Sign in to start</button>
+            <button className="px-4 py-2 rounded-md bg-emerald-600 text-white hover:bg-emerald-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 focus-visible:ring-offset-white shadow-sm">Sign in to start</button>
           </SignInButton>
         </div>
       </SignedOut>
