@@ -5,14 +5,14 @@ import { addSpend, getSpend, resetSpend, SpendDelta } from "@/app/lib/spendStore
 export const runtime = 'nodejs';
 
 export async function GET() {
-  const { userId } = auth();
+  const { userId } = await auth();
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   const totals = getSpend(userId);
   return NextResponse.json({ totals });
 }
 
 export async function POST(req: NextRequest) {
-  const { userId } = auth();
+  const { userId } = await auth();
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   try {
