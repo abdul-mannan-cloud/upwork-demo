@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 
 import { auth } from "@clerk/nextjs/server";
-import {WebSocketServer} from "ws";
 
 export const runtime = 'nodejs';
 
