@@ -4,18 +4,21 @@ import React, { createContext, useContext, useMemo, useState, FC, PropsWithChild
 import { countTokens } from "@/app/lib/tokenService";
 
 export type TokenTotals = {
-  // Text
+  // Aggregated (for UI)
+  inputTokens: number;
+  inputCostUSD: number;
+  outputTokens: number;
+  outputCostUSD: number;
+  totalCostUSD: number;
+  // Detailed (kept for compatibility and potential debugging)
   inputTextTokens: number;
   inputTextCostUSD: number;
   outputTextTokens: number;
   outputTextCostUSD: number;
-  // Audio (counted via transcripts, priced at audio rates)
   inputAudioTokens: number;
   inputAudioCostUSD: number;
   outputAudioTokens: number;
   outputAudioCostUSD: number;
-  // Overall
-  totalCostUSD: number;
 };
 
 // Default model used by the Realtime session in this project
@@ -27,6 +30,7 @@ function normalizeModel(model: string): string {
   if (m.startsWith("gpt-4o-realtime-preview")) return "gpt-4o-realtime-preview";
   if (m.startsWith("gpt-4o-mini-realtime-preview")) return "gpt-4o-mini-realtime-preview";
   if (m.startsWith("gpt-realtime")) return "gpt-realtime";
+  if (m.startsWith("gpt-4.1")) return "gpt-4.1";
   // fallback to family used in this demo
   return "gpt-4o-realtime-preview";
 }
@@ -36,6 +40,8 @@ const TEXT_PRICING_PER_1M: Record<string, { input: number; output: number }> = {
   "gpt-realtime": { input: 4.0, output: 16.0 },
   "gpt-4o-realtime-preview": { input: 5.0, output: 20.0 },
   "gpt-4o-mini-realtime-preview": { input: 0.6, output: 2.4 },
+  // Add gpt-4.1 family (approximate text-only rates; adjust if your account has different pricing)
+  "gpt-4.1": { input: 5.0, output: 15.0 },
 };
 
 const AUDIO_PRICING_PER_1M: Record<string, { input: number; output: number }> = {
@@ -52,24 +58,23 @@ const TokenContext = createContext<{
   addOutputTextTokensDelta: (delta: number, modelOverride?: string) => void;
   addInputAudioTranscript: (text: string, modelOverride?: string) => Promise<void>;
   addOutputAudioTranscript: (text: string, modelOverride?: string) => Promise<void>;
+  addUsageFromResponse: (usage: any, meta?: { model?: string; modalities?: string[] }) => void;
   reset: () => void;
 } | undefined>(undefined);
 
 export const TokenProvider: FC<PropsWithChildren> = ({ children }) => {
-  // Text
+  // Text token counters (sum across models)
   const [inputTextTokens, setInputTextTokens] = useState(0);
   const [outputTextTokens, setOutputTextTokens] = useState(0);
-  // Audio (using transcript token counts)
+  // Audio token counters (sum across models)
   const [inputAudioTokens, setInputAudioTokens] = useState(0);
   const [outputAudioTokens, setOutputAudioTokens] = useState(0);
 
-  const modelFamily = useMemo(() => normalizeModel(DEFAULT_REALTIME_MODEL), []);
-
-  // Costs
-  const inputTextCostUSD = useMemo(() => (inputTextTokens / 1_000_000) * (TEXT_PRICING_PER_1M[modelFamily]?.input ?? 5.0), [inputTextTokens, modelFamily]);
-  const outputTextCostUSD = useMemo(() => (outputTextTokens / 1_000_000) * (TEXT_PRICING_PER_1M[modelFamily]?.output ?? 20.0), [outputTextTokens, modelFamily]);
-  const inputAudioCostUSD = useMemo(() => (inputAudioTokens / 1_000_000) * (AUDIO_PRICING_PER_1M[modelFamily]?.input ?? 40.0), [inputAudioTokens, modelFamily]);
-  const outputAudioCostUSD = useMemo(() => (outputAudioTokens / 1_000_000) * (AUDIO_PRICING_PER_1M[modelFamily]?.output ?? 80.0), [outputAudioTokens, modelFamily]);
+  // Cost accumulators per bucket (sum across models, priced at the moment of ingest)
+  const [inputTextCostUSD, setInputTextCostUSD] = useState(0);
+  const [outputTextCostUSD, setOutputTextCostUSD] = useState(0);
+  const [inputAudioCostUSD, setInputAudioCostUSD] = useState(0);
+  const [outputAudioCostUSD, setOutputAudioCostUSD] = useState(0);
 
   const totalCostUSD = useMemo(() => inputTextCostUSD + outputTextCostUSD + inputAudioCostUSD + outputAudioCostUSD, [inputTextCostUSD, outputTextCostUSD, inputAudioCostUSD, outputAudioCostUSD]);
 
@@ -122,11 +127,52 @@ export const TokenProvider: FC<PropsWithChildren> = ({ children }) => {
     }
   };
 
+  const addUsageFromResponse = (usage: any, meta?: { model?: string; modalities?: string[] }) => {
+    if (!usage || typeof usage !== 'object') return;
+
+    // Prefer detailed breakdowns when present (newer Realtime events)
+    let inText = usage?.input_token_details?.text_tokens as number | undefined;
+    const inAudio = usage?.input_token_details?.audio_tokens as number | undefined;
+    let outText = usage?.output_token_details?.text_tokens as number | undefined;
+    const outAudio = usage?.output_token_details?.audio_tokens as number | undefined;
+
+    // Backward-compat: some events may only include input_tokens/output_tokens totals
+    // In that case, attribute totals to text buckets so cost still shows up (text-only models like gpt-4.1)
+    if (typeof inText !== 'number' && typeof usage.input_tokens === 'number') {
+      inText = usage.input_tokens;
+    }
+    if (typeof outText !== 'number' && typeof usage.output_tokens === 'number') {
+      outText = usage.output_tokens;
+    }
+
+    // Determine pricing family by model (fallback to realtime default)
+    const modelKey = normalizeModel(meta?.model || DEFAULT_REALTIME_MODEL);
+
+    // Update token counters
+    if (inText) setInputTextTokens((p) => p + inText);
+    if (typeof inAudio === 'number') setInputAudioTokens((p) => p + inAudio);
+    if (outText) setOutputTextTokens((p) => p + outText);
+    if (typeof outAudio === 'number') setOutputAudioTokens((p) => p + outAudio);
+
+    // Update cost accumulators using per-model pricing
+    const textPricing = TEXT_PRICING_PER_1M[modelKey] || TEXT_PRICING_PER_1M[normalizeModel(DEFAULT_REALTIME_MODEL)];
+    const audioPricing = AUDIO_PRICING_PER_1M[modelKey] || AUDIO_PRICING_PER_1M[normalizeModel(DEFAULT_REALTIME_MODEL)];
+
+    if (inText && textPricing) setInputTextCostUSD((c) => c + (inText! / 1_000_000) * textPricing.input);
+    if (typeof inAudio === 'number' && audioPricing) setInputAudioCostUSD((c) => c + (inAudio! / 1_000_000) * audioPricing.input);
+    if (outText && textPricing) setOutputTextCostUSD((c) => c + (outText! / 1_000_000) * textPricing.output);
+    if (typeof outAudio === 'number' && audioPricing) setOutputAudioCostUSD((c) => c + (outAudio! / 1_000_000) * audioPricing.output);
+  };
+
   const reset = () => {
     setInputTextTokens(0);
     setOutputTextTokens(0);
     setInputAudioTokens(0);
     setOutputAudioTokens(0);
+    setInputTextCostUSD(0);
+    setOutputTextCostUSD(0);
+    setInputAudioCostUSD(0);
+    setOutputAudioCostUSD(0);
   };
 
   // Sync totals with server-side per-user cache (best-effort).
@@ -179,6 +225,13 @@ export const TokenProvider: FC<PropsWithChildren> = ({ children }) => {
   }, [inputTextTokens, outputTextTokens, inputAudioTokens, outputAudioTokens]);
 
   const totals: TokenTotals = {
+    // Aggregated
+    inputTokens: inputTextTokens + inputAudioTokens,
+    inputCostUSD: inputTextCostUSD + inputAudioCostUSD,
+    outputTokens: outputTextTokens + outputAudioTokens,
+    outputCostUSD: outputTextCostUSD + outputAudioCostUSD,
+    totalCostUSD,
+    // Detailed (still available for debugging/other views)
     inputTextTokens,
     inputTextCostUSD,
     outputTextTokens,
@@ -187,7 +240,6 @@ export const TokenProvider: FC<PropsWithChildren> = ({ children }) => {
     inputAudioCostUSD,
     outputAudioTokens,
     outputAudioCostUSD,
-    totalCostUSD,
   };
 
   return (
@@ -199,6 +251,7 @@ export const TokenProvider: FC<PropsWithChildren> = ({ children }) => {
         addOutputText,
         addOutputTextTokensDelta,
         addInputAudioTranscript,
+        addUsageFromResponse, 
         addOutputAudioTranscript,
         reset,
       }}

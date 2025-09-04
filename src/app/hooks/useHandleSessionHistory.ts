@@ -3,8 +3,8 @@
 import { useRef } from "react";
 import { useTranscript } from "@/app/contexts/TranscriptContext";
 import { useEvent } from "@/app/contexts/EventContext";
-import { useToken } from "@/app/contexts/TokenContext";
-import { countTokens } from "@/app/lib/tokenService";
+// import { useToken } from "@/app/contexts/TokenContext";
+// import { countTokens } from "@/app/lib/tokenService";
 
 export function useHandleSessionHistory() {
   const {
@@ -15,11 +15,10 @@ export function useHandleSessionHistory() {
     updateTranscriptItem,
   } = useTranscript();
 
-  const { addInputAudioTranscript, addOutputAudioTranscript, addOutputTextTokensDelta } = useToken();
+  // Token usage is now sourced from response.done events; no incremental counting here.
   const { logServerEvent } = useEvent();
 
-  // Track already-counted assistant text tokens per message to add only deltas
-  const assistantTextTokenCountRef = useRef<Record<string, number>>({});
+  // No token counting refs needed; TokenContext updates from response.done usage.
 
   /* ----------------------- helpers ------------------------- */
 
@@ -122,29 +121,14 @@ export function useHandleSessionHistory() {
     items.forEach((item: any) => {
       if (!item || item.type !== 'message') return;
 
-      const { itemId, role, content = [] } = item;
+      const { itemId, content = [] } = item;
 
       const text = extractMessageText(content);
 
       if (text) {
         updateTranscriptMessage(itemId, text, false);
 
-        // Incrementally count assistant output text tokens
-        if (role === 'assistant') {
-          (async () => {
-            try {
-              const newCount = await countTokens(text);
-              const prevCount = assistantTextTokenCountRef.current[itemId] ?? 0;
-              if (newCount > prevCount) {
-                const delta = newCount - prevCount;
-                assistantTextTokenCountRef.current[itemId] = newCount;
-                addOutputTextTokensDelta(delta);
-              }
-            } catch (err) {
-              console.warn('[handleHistoryUpdated] token count failed', err);
-            }
-          })();
-        }
+        // Token usage is handled via response.done events; no incremental text token counting here.
       }
     });
   }
@@ -182,14 +166,7 @@ export function useHandleSessionHistory() {
         });
       }
 
-      // Token tracking for audio transcripts
-      try {
-        if (item?.type === 'conversation.item.input_audio_transcription.completed') {
-          await addInputAudioTranscript(finalTranscript);
-        } else if (item?.type === 'response.audio_transcript.done') {
-          await addOutputAudioTranscript(finalTranscript);
-        }
-      } catch {}
+      // Token tracking moved to response.done usage events
     }
   }
 

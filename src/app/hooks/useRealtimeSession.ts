@@ -7,6 +7,7 @@ import {
 
 import { audioFormatForCodec, applyCodecPreferences } from '../lib/codecUtils';
 import { useEvent } from '../contexts/EventContext';
+import { useToken } from "@/app/contexts/TokenContext";
 import { useHandleSessionHistory } from './useHandleSessionHistory';
 import { SessionStatus } from '../types';
 
@@ -40,11 +41,13 @@ export function useRealtimeSession(callbacks: RealtimeSessionCallbacks = {}) {
   );
 
   const { logServerEvent } = useEvent();
+  const { addUsageFromResponse } = useToken();
 
   const historyHandlers = useHandleSessionHistory().current;
 
   function handleTransportEvent(event: any) {
     // Handle additional server events that aren't managed by the session
+      console.log('handleTransportEvent', event);
     switch (event.type) {
       case "conversation.item.input_audio_transcription.completed": {
         historyHandlers.handleTranscriptionCompleted(event);
@@ -56,6 +59,19 @@ export function useRealtimeSession(callbacks: RealtimeSessionCallbacks = {}) {
       }
       case "response.audio_transcript.delta": {
         historyHandlers.handleTranscriptionDelta(event);
+        break;
+      }
+      case "response.done": {
+        try {
+            console.log('Response done event:', event);
+          const usage = event?.response?.usage;
+          if (usage) {
+            const model = event?.response?.model || 'gpt-4o-realtime-preview-2025-06-03';
+            const modalities = event?.response?.modalities;
+            addUsageFromResponse(usage, { model, modalities });
+          }
+        } catch {}
+        logServerEvent(event);
         break;
       }
       default: {
@@ -86,6 +102,7 @@ export function useRealtimeSession(callbacks: RealtimeSessionCallbacks = {}) {
   };
 
   useEffect(() => {
+      console.log('hello helllo hello')
     if (sessionRef.current) {
       // Log server errors
       sessionRef.current.on("error", (...args: any[]) => {
@@ -94,6 +111,8 @@ export function useRealtimeSession(callbacks: RealtimeSessionCallbacks = {}) {
           message: args[0],
         });
       });
+
+      console.log("Session status:", sessionRef.current);
 
       // history events
       sessionRef.current.on("agent_handoff", handleAgentHandoff);

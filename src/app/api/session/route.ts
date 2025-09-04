@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { auth } from "@clerk/nextjs/server";
+import {WebSocketServer} from "ws";
 
 export const runtime = 'nodejs';
 
@@ -17,6 +18,7 @@ export async function GET() {
   }
 
   try {
+
     const response = await fetch(
       "https://api.openai.com/v1/realtime/sessions",
       {
@@ -44,6 +46,7 @@ export async function GET() {
       console.error("/api/session: missing client_secret in upstream response", data);
       return NextResponse.json({ error: "No ephemeral key from upstream", details: data }, { status: 502 });
     }
+
 
     return NextResponse.json(data);
   } catch (error) {

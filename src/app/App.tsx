@@ -41,7 +41,7 @@ import { useHandleSessionHistory } from "./hooks/useHandleSessionHistory";
 import { useToken } from "@/app/contexts/TokenContext";
 
 function App() {
-    const { totals, addInputText } = useToken();
+    const { totals } = useToken();
     const searchParams = useSearchParams();
 
     // ---------------------------------------------------------------------
@@ -283,12 +283,7 @@ function App() {
         const id = uuidv4().slice(0, 32);
         addTranscriptMessage(id, "user", text, true);
 
-        // Track tokens for simulated user text
-        try {
-            addInputText(text);
-        } catch (error) {
-            console.warn('Failed to track input text tokens:', error);
-        }
+        // Token pricing now tracked from response.done usage; no local input token counting here.
 
         sendClientEvent({
             type: 'conversation.item.create',
@@ -334,12 +329,7 @@ function App() {
         if (!userText.trim()) return;
         interrupt();
 
-        try {
-            // Track tokens for typed user text
-            addInputText(userText.trim());
-        } catch (error) {
-            console.warn('Failed to track input text tokens:', error);
-        }
+        // Token pricing now tracked from response.done usage; no local input token counting here.
 
         try {
             sendUserText(userText.trim());
@@ -582,19 +572,13 @@ function App() {
                         )}
                         <div className="py-2 border-t border-gray-100 mt-2 flex flex-wrap items-center gap-2 text-xs text-gray-700">
                             {/* Per-user totals are stored server-side with a short TTL and mirrored here. */}
-                            <span className="px-2 py-1 bg-white border border-gray-200 rounded-full shadow-sm" title="User typed or simulated text tokens">
-                Text In: {totals.inputTextTokens} · ${totals.inputTextCostUSD.toFixed(4)}
+                            <span className="px-2 py-1 bg-white border border-gray-200 rounded-full shadow-sm" title="All input tokens (text + audio) and cost">
+                In: {totals.inputTokens} · ${totals.inputCostUSD.toFixed(4)}
               </span>
-                            <span className="px-2 py-1 bg-white border border-gray-200 rounded-full shadow-sm" title="Assistant text output tokens">
-                Text Out: {totals.outputTextTokens} · ${totals.outputTextCostUSD.toFixed(4)}
+                            <span className="px-2 py-1 bg-white border border-gray-200 rounded-full shadow-sm" title="All output tokens (text + audio) and cost">
+                Out: {totals.outputTokens} · ${totals.outputCostUSD.toFixed(4)}
               </span>
-                            <span className="px-2 py-1 bg-white border border-gray-200 rounded-full shadow-sm" title="User audio transcript tokens (priced at audio rates)">
-                Audio In: {totals.inputAudioTokens} · ${totals.inputAudioCostUSD.toFixed(4)}
-              </span>
-                            <span className="px-2 py-1 bg-white border border-gray-200 rounded-full shadow-sm" title="Assistant audio transcript tokens (priced at audio rates)">
-                Audio Out: {totals.outputAudioTokens} · ${totals.outputAudioCostUSD.toFixed(4)}
-              </span>
-                            <span className="px-2 py-1 bg-emerald-50 border border-emerald-200 text-emerald-700 rounded-full font-semibold shadow-sm" title="Total cost across text and audio">
+                            <span className="px-2 py-1 bg-emerald-50 border border-emerald-200 text-emerald-700 rounded-full font-semibold shadow-sm" title="Total cost across input and output">
                 Total: ${totals.totalCostUSD.toFixed(4)}
               </span>
                         </div>
